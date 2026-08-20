@@ -83,6 +83,14 @@ variable does not reach it:
 JAVA_OPTS: -Dalfresco.reindex.prefixes-file=file:/config/prefixes.json
 ```
 
+The extended copy has to be built from the shipped one, because the file replaces the map rather
+than extending it. Supplying only the custom namespace strips Alfresco's own, and the indexer then
+cannot resolve `sys:versionMajor` while validating the repository schema: `validateDbSchemaStep`
+fails with `NumberFormatException: Cannot parse null string`, the watermark never advances, and
+nothing is indexed at all. Passing one entry as `-DprefixUriMap[uri]=prefix` fails the same way,
+since the system property takes precedence over the whole map instead of adding a key to it. A
+missing core namespace therefore fails loudly, while a missing custom namespace fails silently.
+
 ## Quick start
 
 Requirements: Docker with Compose v2, roughly 8 GB free for the containers, and Python 3.9 or
