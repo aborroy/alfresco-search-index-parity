@@ -1,0 +1,24 @@
+# Written by the harness at run time: the namespace prefix map read out of the batch
+# indexing image, plus the extended copy mounted into the container. Regenerate with
+# `python3 -m harness prepare`.
+generated/
+
+# Run output. Snapshots you want to keep (a reference Enterprise snapshot, for instance)
+# can be force-added with `git add -f`.
+snapshots/*.json
+report.json
+
+# The tracked .env holds pinned tags and clearly labelled demo credentials. Local
+# overrides are not tracked.
+.env.local
+*.env.local
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+__pycache__/
+*.pyc

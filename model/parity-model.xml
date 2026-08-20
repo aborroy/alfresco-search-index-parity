@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A custom content model whose namespace is deliberately unknown to the batch indexer.
+
+  The prefix "parity" appears in no Alfresco distribution, so it is absent from the static
+  namespace prefix map that alfresco-elasticsearch-batch-indexing ships. That is exactly the
+  condition the harness measures: the repository maps these properties into the index either
+  way, and the indexer can only populate them once the prefix is known to it.
+-->
+<model name="parity:model" xmlns="http://www.alfresco.org/model/dictionary/1.0">
+
+    <description>Custom model for index parity testing</description>
+    <author>alfresco-search-index-parity</author>
+    <version>1.0</version>
+
+    <imports>
+        <import uri="http://www.alfresco.org/model/dictionary/1.0" prefix="d"/>
+        <import uri="http://www.alfresco.org/model/content/1.0" prefix="cm"/>
+    </imports>
+
+    <namespaces>
+        <namespace uri="http://parity.example.org/model/1.0" prefix="parity"/>
+    </namespaces>
+
+    <types>
+        <type name="parity:record">
+            <title>Parity record</title>
+            <parent>cm:content</parent>
+            <properties>
+                <property name="parity:serial">
+                    <type>d:text</type>
+                    <index enabled="true">
+                        <tokenised>false</tokenised>
+                    </index>
+                </property>
+                <property name="parity:score">
+                    <type>d:int</type>
+                </property>
+                <property name="parity:reviewed">
+                    <type>d:boolean</type>
+                </property>
+                <property name="parity:reviewDate">
+                    <type>d:datetime</type>
+                </property>
+            </properties>
+        </type>
+    </types>
+
+    <aspects>
+        <aspect name="parity:classified">
+            <title>Parity classified</title>
+            <properties>
+                <property name="parity:classification">
+                    <type>d:text</type>
+                </property>
+            </properties>
+        </aspect>
+    </aspects>
+
+</model>

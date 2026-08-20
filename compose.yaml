@@ -1,0 +1,118 @@
+# Alfresco Content Services Community 26.2 with Alfresco Search Community.
+#
+# The harness drives this stack in two stages, which is why the indexer sits behind a
+# Compose profile:
+#
+#   docker compose up -d                                 repository, database, transforms, OpenSearch
+#   docker compose --profile indexer up -d               adds the batch indexer
+#
+# Starting the search backend without any indexer is what proves the index mapping is
+# created by the repository rather than by whichever indexer happens to write to it.
+#
+# Tags and credentials come from .env.
+
+services:
+
+  postgres:
+    image: postgres:${POSTGRES_TAG}
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_DB: ${DB_NAME}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  transform-core-aio:
+    image: alfresco/alfresco-transform-core-aio:${TRANSFORM_TAG}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  alfresco:
+    image: alfresco/alfresco-content-repository-community:${ALFRESCO_TAG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      transform-core-aio:
+        condition: service_healthy
+    environment:
+      # Product defaults for the metadata keystore, not secrets to protect.
+      JAVA_TOOL_OPTIONS: >-
+        -Dencryption.keystore.type=JCEKS
+        -Dencryption.cipherAlgorithm=DESede/CBC/PKCS5Padding
+        -Dencryption.keyAlgorithm=DESede
+        -Dencryption.keystore.location=/usr/local/tomcat/shared/classes/alfresco/extension/keystore/keystore
+        -Dmetadata-keystore.password=mp6yc0UD9e
+        -Dmetadata-keystore.aliases=metadata
+        -Dmetadata-keystore.metadata.password=oKIWzVdEdA
+        -Dmetadata-keystore.metadata.algorithm=DESede
+      JAVA_OPTS: >-
+        -Ddb.driver=org.postgresql.Driver
+        -Ddb.username=${DB_USER}
+        -Ddb.password=${DB_PASSWORD}
+        -Ddb.url=jdbc:postgresql://postgres:5432/${DB_NAME}
+        -Dsolr.secureComms=secret
+        -Dsolr.sharedSecret=${SHARED_SECRET}
+        -Dindex.subsystem.name=elasticsearch
+        -Delasticsearch.host=opensearch
+        -Delasticsearch.port=9200
+        -Delasticsearch.createIndexIfNotExists=true
+        -DlocalTransform.core-aio.url=http://transform-core-aio:8090/
+        -Dcsrf.filter.enabled=false
+        -Dalfresco.restApi.basicAuthScheme=true
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/alfresco/api/-default-/public/alfresco/versions/1/probes/-ready-"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 1m
+
+  opensearch:
+    image: opensearchproject/opensearch:${OPENSEARCH_TAG}
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 1m
+
+  batch-indexer:
+    image: alfresco/alfresco-elasticsearch-batch-indexing:${BATCH_INDEXER_TAG}
+    profiles: ["indexer"]
+    depends_on:
+      alfresco:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_ELASTICSEARCH_REST_URIS: http://opensearch:9200
+      ALFRESCO_ACS_URL: http://alfresco:8080
+      ALFRESCO_ACCEPTEDCONTENTMEDIATYPESCACHE_BASEURL: http://transform-core-aio:8090/transform/config
+      ALFRESCO_CONTENT_TRANSFORM_SHAREDSECRET: ${SHARED_SECRET}
+      # Short interval so the harness does not spend its life waiting for a poll.
+      ALFRESCO_REINDEX_CONTINUOUS_POLLINGINTERVAL: 5s
+      # The namespace prefix map the indexer uses to name metadata fields. The harness
+      # writes generated/prefixes.json: first the map the image ships, then an extended
+      # copy that knows about the custom model. Passed as a system property because
+      # PrefixNamespaceConfig resolves it through @PropertySource, before relaxed binding.
+      JAVA_OPTS: -Dalfresco.reindex.prefixes-file=file:/config/prefixes.json
+    volumes:
+      - ./generated:/config:ro
+    ports:
+      - "8091:8080"
