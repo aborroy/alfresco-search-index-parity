@@ -1,6 +1,6 @@
-# Written by the harness at run time: the namespace prefix map read out of the batch
-# indexing image, plus the extended copy mounted into the container. Regenerate with
-# `python3 -m harness prepare`.
+# Written by the harness at run time: the prefix-map addon it downloads, and the namespace
+# prefix map it fetches from the running repository and mounts into the indexer. Regenerate
+# with `python3 -m harness prepare`.
 generated/
 
 # Run output. Snapshots you want to keep (a reference Enterprise snapshot, for instance)
