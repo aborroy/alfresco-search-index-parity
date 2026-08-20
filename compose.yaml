@@ -66,6 +66,11 @@ services:
         -DlocalTransform.core-aio.url=http://transform-core-aio:8090/
         -Dcsrf.filter.enabled=false
         -Dalfresco.restApi.basicAuthScheme=true
+    volumes:
+      # The addon that serves the namespace prefix map the indexer needs, downloaded and
+      # checksum-verified by the harness before this container starts. The image carries an
+      # exploded webapp, so a bind mount is all it takes to install a module JAR.
+      - ./generated/addons/model-ns-prefix-mapping.jar:/usr/local/tomcat/webapps/alfresco/WEB-INF/lib/model-ns-prefix-mapping.jar:ro
     ports:
       - "8080:8080"
     healthcheck:
@@ -107,9 +112,9 @@ services:
       ALFRESCO_CONTENT_TRANSFORM_SHAREDSECRET: ${SHARED_SECRET}
       # Short interval so the harness does not spend its life waiting for a poll.
       ALFRESCO_REINDEX_CONTINUOUS_POLLINGINTERVAL: 5s
-      # The namespace prefix map the indexer uses to name metadata fields. The harness
-      # writes generated/prefixes.json: first the map the image ships, then an extended
-      # copy that knows about the custom model. Passed as a system property because
+      # The namespace prefix map the indexer uses to name metadata fields. The harness fetches
+      # it from the repository into generated/prefixes.json: first before the custom model is
+      # deployed, then again afterwards. Passed as a system property because
       # PrefixNamespaceConfig resolves it through @PropertySource, before relaxed binding.
       JAVA_OPTS: -Dalfresco.reindex.prefixes-file=file:/config/prefixes.json
     volumes:

@@ -79,7 +79,9 @@ Two things this repository measures are worth acting on rather than just reading
 
 - **Namespaces.** Check `alfresco.reindex.prefixes-file` against the content models actually
   deployed in your repository before trusting a Community-built index. The `custom-model-prefix`
-  check in `report.json` shows what an unlisted namespace costs.
+  check in `report.json` shows what an unlisted namespace costs. The Enterprise reindexing
+  application configures the same property, so carry the generated file across the upgrade instead
+  of regenerating it from memory.
 - **The gap.** The Community application indexes up to a watermark. Whatever was committed
   between that watermark and the moment live indexing takes over has to be covered by a bounded
   reindexing pass over that window, with an overlap, rather than assumed.

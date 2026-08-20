@@ -304,7 +304,7 @@ def observe_custom_model(search, nodes, dead_letter_count, log_excerpt):
     }
 
 
-def indexer_error_excerpt(limit=8):
+def indexer_error_excerpt(limit=16):
     """The indexer's own account of what it could not resolve."""
     lines = [
         line.strip()
@@ -315,54 +315,59 @@ def indexer_error_excerpt(limit=8):
     return unique[:limit]
 
 
-def check_custom_model_prefix(stock, extended):
+def check_custom_model_prefix(stale, refetched):
     """The one configuration item that decides what custom model content is searchable.
 
-    The batch application resolves namespace URIs through a static file it carries, so a
-    namespace absent from that file cannot be turned into a field name. What that costs depends
-    on where the unknown namespace appears: a property is dropped, but a node whose own type is
-    unknown cannot be indexed at all.
+    An application that reads the repository database resolves namespace URIs through a static
+    file, so a namespace absent from that file cannot be turned into a field name. What that
+    costs depends on where the unknown namespace appears: a property is dropped, but a node whose
+    own type is unknown cannot be indexed at all. The Enterprise reindexing application reads the
+    same property, so this is not only a Community concern.
+
+    Measured against a map the repository generated before the model was deployed, which is the
+    state of any installation where a model was added and the map was not refreshed, and then
+    against the same map re-fetched afterwards.
 
     Either way the damage is fidelity, not shape: the documents that do exist are keyed and
-    structured exactly as before, and configuring the namespace fills in the rest.
+    structured exactly as before, and a current map fills in the rest.
     """
     evidence = {
         "namespace": fixtures.CUSTOM_NAMESPACE_URI,
-        "withPrefixMapFromImage": stock,
-        "withNamespaceAdded": extended,
+        "withMapPredatingTheModel": stale,
+        "withMapRefetchedAfterTheModel": refetched,
     }
-    question = "What does a custom model namespace unknown to the Community indexer cost?"
+    question = "What does a content model namespace missing from the indexer's prefix map cost?"
 
     recovered = (
-        extended["typedNode"]["indexed"]
-        and not extended["typedNode"]["absentFields"]
-        and extended["aspectNode"]["classificationIndexed"]
+        refetched["typedNode"]["indexed"]
+        and not refetched["typedNode"]["absentFields"]
+        and refetched["aspectNode"]["classificationIndexed"]
     )
     if not recovered:
         missing = []
-        if not extended["typedNode"]["indexed"]:
+        if not refetched["typedNode"]["indexed"]:
             missing.append("the custom-typed node is still not indexed")
-        if extended["typedNode"]["absentFields"]:
-            missing.append("still missing " + ", ".join(extended["typedNode"]["absentFields"]))
-        if not extended["aspectNode"]["classificationIndexed"]:
+        if refetched["typedNode"]["absentFields"]:
+            missing.append("still missing " + ", ".join(refetched["typedNode"]["absentFields"]))
+        if not refetched["aspectNode"]["classificationIndexed"]:
             missing.append("the custom aspect property is still missing")
         return Result(
             "custom-model-prefix",
             question,
             Result.FAIL,
-            "adding %s to the prefix map did not repair the index: %s"
+            "a prefix map covering %s did not repair the index: %s"
             % (fixtures.CUSTOM_NAMESPACE_URI, "; ".join(missing)),
             evidence,
         )
 
     losses = []
-    if not stock["typedNode"]["indexed"]:
+    if not stale["typedNode"]["indexed"]:
         losses.append("a node of a custom type was not indexed at all")
-    elif stock["typedNode"]["absentFields"]:
+    elif stale["typedNode"]["absentFields"]:
         losses.append(
-            "a node of a custom type lost %d field(s)" % len(stock["typedNode"]["absentFields"])
+            "a node of a custom type lost %d field(s)" % len(stale["typedNode"]["absentFields"])
         )
-    if stock["aspectNode"]["indexed"] and not stock["aspectNode"]["classificationIndexed"]:
+    if stale["aspectNode"]["indexed"] and not stale["aspectNode"]["classificationIndexed"]:
         losses.append("a cm:content node with a custom aspect was indexed without that property")
 
     if not losses:
@@ -370,17 +375,17 @@ def check_custom_model_prefix(stock, extended):
             "custom-model-prefix",
             question,
             Result.INFO,
-            "nothing: this version indexed the custom model correctly with the prefix map the "
-            "image ships",
+            "nothing: this version indexed the custom model correctly with a prefix map that "
+            "predates it",
             evidence,
         )
     return Result(
         "custom-model-prefix",
         question,
         Result.PASS,
-        "with the prefix map the image ships, %s, and %d node(s) were dead-lettered; adding the "
-        "namespace to the map recovered everything"
-        % (" and ".join(losses), stock["deadLetterDocuments"]),
+        "with a prefix map predating the model, %s, and %d node(s) were dead-lettered; "
+        "re-fetching the map from the repository recovered everything"
+        % (" and ".join(losses), stale["deadLetterDocuments"]),
         evidence,
     )
 

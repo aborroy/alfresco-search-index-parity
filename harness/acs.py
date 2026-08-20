@@ -88,6 +88,25 @@ class Acs:
         self.set_content(node["id"], model_xml, content_type="text/xml")
         return self.update_node(node["id"], {"properties": {"cm:modelActive": True}})
 
+    def namespace_prefix_map(self):
+        """The URI to prefix map for every deployed model, straight from the dictionary.
+
+        Served by the model-ns-prefix-mapping addon, which compose.yaml mounts into the
+        repository webapp. The response is exactly the structure the batch indexer consumes as
+        `alfresco.reindex.prefixes-file`, so nothing has to be assembled by hand.
+        """
+        url = self.base + "/alfresco/s/model/ns-prefix-map"
+        try:
+            _, body = httpjson.request("GET", url, auth=self.auth, timeout=60)
+        except httpjson.HttpError as error:
+            if error.status == 404:
+                raise RuntimeError(
+                    "%s is not available: the model-ns-prefix-mapping addon is not installed "
+                    "in this repository" % url
+                ) from None
+            raise
+        return body["prefixUriMap"]
+
     def _find_child(self, parent_id, name):
         listing = self._call("GET", "/nodes/%s/children?maxItems=1000" % parent_id)
         for entry in listing["list"]["entries"]:

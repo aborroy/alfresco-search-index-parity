@@ -20,15 +20,14 @@ def log(message):
 
 
 def cmd_prepare(args):
-    """Read the namespace prefix map out of the pinned indexer image and mount-ready it."""
-    prefixes = stack.stock_prefixes()
+    """Fetch the namespace prefix map from the running repository and mount-ready it."""
+    prefixes = acs.Acs(args.acs).namespace_prefix_map()
     target = stack.write_prefixes(prefixes)
-    log("prefix map from %s: %d namespaces -> %s" % (stack.indexer_image(), len(prefixes), target))
+    log("prefix map from the repository: %d namespaces -> %s" % (len(prefixes), target))
     return 0
 
 
 def cmd_up(args):
-    cmd_prepare(args)
     log("starting the repository, database, transforms and OpenSearch (no indexer yet)")
     stack.up_core()
     client = acs.Acs(args.acs)
@@ -37,6 +36,7 @@ def cmd_up(args):
     log("OpenSearch is healthy")
     client.wait_ready()
     log("the repository is ready")
+    cmd_prepare(args)
     return 0
 
 
@@ -99,33 +99,42 @@ def cmd_run(args):
 
     mapping_before_indexer = checks.mapped_fields(engine.mapping())
 
-    # 3. Now let the Community indexer fill the index the repository built.
-    log("starting the batch indexer with the prefix map the image ships")
+    # 3. Now let the Community indexer fill the index the repository built, with the map as it
+    # was before the model existed: the state of anyone who deploys a model and forgets it.
+    log("starting the batch indexer with the prefix map fetched before the model was deployed")
     stack.up_indexer()
     _wait_for_documents(engine, nodes, exclude=contract.CUSTOM_TYPE_LABELS)
     _wait_for_text(engine, nodes, exclude=contract.CUSTOM_TYPE_LABELS)
 
     # 4. The custom model namespace, measured before and after configuring it.
-    stock_observation = checks.observe_custom_model(
+    stale_observation = checks.observe_custom_model(
         engine,
         nodes,
         engine.count(index=search.DEAD_LETTER_INDEX),
         checks.indexer_error_excerpt(),
     )
     log(
-        "with the prefix map from the image: custom-typed node indexed=%s, custom aspect "
+        "with the stale prefix map: custom-typed node indexed=%s, custom aspect "
         "property indexed=%s"
         % (
-            stock_observation["typedNode"]["indexed"],
-            stock_observation["aspectNode"]["classificationIndexed"],
+            stale_observation["typedNode"]["indexed"],
+            stale_observation["aspectNode"]["classificationIndexed"],
         )
     )
 
-    log("adding %s to the prefix map and restarting the indexer" % fixtures.CUSTOM_NAMESPACE_URI)
-    stack.write_prefixes(
-        stack.stock_prefixes(),
-        extra={fixtures.CUSTOM_NAMESPACE_URI: fixtures.CUSTOM_NAMESPACE_PREFIX},
-    )
+    log("re-fetching the prefix map, now that %s is deployed" % fixtures.CUSTOM_NAMESPACE_URI)
+    refetched = client.namespace_prefix_map()
+    if refetched.get(fixtures.CUSTOM_NAMESPACE_URI) != fixtures.CUSTOM_NAMESPACE_PREFIX:
+        raise SystemExit(
+            "the repository did not report %s as %s: %s"
+            % (
+                fixtures.CUSTOM_NAMESPACE_URI,
+                fixtures.CUSTOM_NAMESPACE_PREFIX,
+                refetched.get(fixtures.CUSTOM_NAMESPACE_URI),
+            )
+        )
+    stack.write_prefixes(refetched)
+    log("restarting the indexer so it reads the map again")
     stack.restart_indexer()
     log("touching the custom nodes so they fall after the indexing cursor again")
     client.rename(nodes["doc-custom-type"]["id"], "custom-record-touched.txt")
@@ -134,10 +143,10 @@ def cmd_run(args):
     _wait_for_field(
         engine, nodes["doc-custom-aspect"]["id"], names.PARITY_CLASSIFICATION, timeout=600
     )
-    extended_observation = checks.observe_custom_model(
+    refetched_observation = checks.observe_custom_model(
         engine, nodes, engine.count(index=search.DEAD_LETTER_INDEX), []
     )
-    results.append(checks.check_custom_model_prefix(stock_observation, extended_observation))
+    results.append(checks.check_custom_model_prefix(stale_observation, refetched_observation))
 
     # 5. With the namespace configured, every fixture is in the index, so the contract can be
     # checked over all of them.
@@ -309,9 +318,9 @@ def main(argv=None):
     run.add_argument("--keep-up", action="store_true", help=argparse.SUPPRESS)
     run.set_defaults(func=cmd_run)
 
-    subparsers.add_parser("prepare", help="write generated/prefixes.json from the indexer image").set_defaults(
-        func=cmd_prepare
-    )
+    subparsers.add_parser(
+        "prepare", help="fetch generated/prefixes.json from the running repository"
+    ).set_defaults(func=cmd_prepare)
     subparsers.add_parser("up", help="start everything except the indexer").set_defaults(func=cmd_up)
     subparsers.add_parser("down", help="stop the stack and delete its volumes").set_defaults(
         func=cmd_down

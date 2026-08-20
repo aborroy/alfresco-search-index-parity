@@ -79,15 +79,23 @@ the route: two different extraction paths, one field.
 
 ### custom-model-prefix
 
-The Community application turns namespace URIs into field-name prefixes using a static JSON
-file it carries, `reindex.prefixes-file.json`, listing the namespaces of a stock distribution.
-A custom model's namespace is not in it.
+An indexer reading the repository database has no access to the dictionary, so it turns namespace
+URIs into field-name prefixes using a static JSON file, `alfresco.reindex.prefixes-file`. That is
+true of the Community batch application and of the Enterprise reindexing application alike; only
+Enterprise live indexing is exempt, because repository events already carry prefixed names. The
+file therefore stays relevant after the upgrade rather than being a Community detail to discard.
 
-The harness reads that file out of the pinned image at run time rather than keeping a copy
-here, writes it to `generated/prefixes.json`, and mounts it into the container. The experiment
-is then differential: index with the file exactly as shipped, record what the index holds for
-the two custom-model nodes, then add one entry for the custom namespace, restart the indexer,
-touch both nodes so they fall after the indexing cursor, and record again.
+The repository is the only component that knows every
+deployed model, so the file is generated from it: the harness downloads the
+[model-ns-prefix-mapping](https://github.com/AlfrescoLabs/model-ns-prefix-mapping) addon,
+checksum-verified, mounts it into the repository webapp, and writes what
+`/alfresco/s/model/ns-prefix-map` returns to `generated/prefixes.json`.
+
+The experiment is then differential, and the two states are the two states a real installation
+passes through. Fetch the map before the model is deployed and index with it, which is what any
+installation looks like when a model is added and the map is not refreshed, and record what the
+index holds for the two custom-model nodes. Then re-fetch the map, restart the indexer, touch both
+nodes so they fall after the indexing cursor, and record again.
 
 Two fixtures rather than one, because the cost depends on where the unknown namespace appears:
 `doc-custom-aspect` is an ordinary `cm:content` node carrying a custom aspect and property,
